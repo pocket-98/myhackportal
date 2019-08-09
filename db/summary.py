@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import sys
 import sqlite3
 
 def get_semesters(cursor):
@@ -69,38 +70,101 @@ def get_professor_course_counts(cursor, prof_id):
         course_counts[int(row[0])] = int(row[1])
     return course_counts
 
-def main():
+def main(argc, argv):
+    # determine whether to print json or not
+    if argc > 1 and argv[1][0] == 'j':
+        print_json = True
+    else:
+        print_json = False
+
+
     # connect to database
     db = sqlite3.connect("courses.db")
     dbc = db.cursor()
 
+    # get semesters
     semesters = get_semesters(dbc)
-    print("semesters:")
-    for i in semesters:
-        s = semesters[i]
-        print(f"  %2d: {s['name']}" % i)
+    if print_json:
+        print('{\n    "semesters": {')
+        end = ",\n"
+        keys = list(semesters.keys())
+        last = keys[-1]
+        for i in keys:
+            s = semesters[i]
+            if i == last:
+                end = "\n"
+            print(f'        {i}: {{"name": "{s["name"]}"}}', end=end)
+        print("    },")
+    else:
+        print("semesters:")
+        for i in semesters:
+            s = semesters[i]
+            print(f"  %2d: {s['name']}" % i)
 
+    # get departments and num courses in each dept
     departments = get_departments(dbc)
-    print("departments:")
-    for i in departments:
-        d = departments[i]
-        n = get_dept_courses_count(dbc, i)
-        print(f"  %2d: {d['dept']} - {d['dept_name']}: {n} courses" % i)
+    if print_json:
+        print('    "departments": {')
+        end = ",\n"
+        keys = list(departments.keys())
+        last = keys[-1]
+        for i in keys:
+            d = departments[i]
+            d["courses_count"] = get_dept_courses_count(dbc, i)
+            if i == last:
+                end = "\n"
+            print(f'        {i}: {{"dept": "{d["dept"]}", ', end="")
+            print(f'"dept_name": "{d["dept_name"]}", ', end="")
+            print(f'"courses_count": {d["courses_count"]}}}', end=end)
+        print("    },")
+    else:
+        print("departments:")
+        for i in departments:
+            d = departments[i]
+            d["courses_count"] = get_dept_courses_count(dbc, i)
+            print(f"  %2d: {d['dept']} - {d['dept_name']}: " % i, end="")
+            print(f"{d['courses_count']} courses")
 
+    # get professors and num courses taught py prof per dept
     professors = get_professors(dbc)
-    print("professors:")
     for i in professors:
         p = professors[i]
         course_counts = get_professor_course_counts(dbc, i)
         courses = get_courses(dbc, course_counts.keys())
-        depts = dict()
+        p["depts"] = dict()
         for course_id in course_counts:
             dept = departments[courses[course_id]["dept_id"]]["dept"]
-            depts[dept] = depts.get(dept, 0) + course_counts[course_id]
-        print(f"  %2d: {p['name']}: {depts}" % i)
+            p["depts"][dept] = p["depts"].get(dept,0) + course_counts[course_id]
+
+    if print_json:
+        print('    "professors": {')
+        end = ",\n"
+        keys = list(professors.keys())
+        last = keys[-1]
+        for i in keys:
+            p = professors[i]
+            if i == last:
+                end = "\n"
+            print(f'        {i}: {{"name": "{p["name"]}", ', end="")
+            print('"depts": {', end="")
+            end2 = ","
+            keys2 = list(p["depts"])
+            last2 = keys2[-1]
+            for j in keys2:
+                if j ==last2:
+                    end2 = ""
+                print(f'"{j}": {p["depts"][j]}', end=end2)
+            print("}", end=end)
+        print("    }")
+        print("}")
+    else:
+        print("professors:")
+        for i in professors:
+            p = professors[i]
+            print(f"  %2d: {p['name']}: {p['depts']}" % i)
 
     # close connection
     db.close()
 
 if __name__ == "__main__":
-    main()
+    main(len(sys.argv), sys.argv)
